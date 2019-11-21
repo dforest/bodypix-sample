@@ -1,6 +1,6 @@
 <template>
   <div id="bodypix">
-    <div id="loading" v-show="loading">
+    <div id="loading" ref="loading" v-show="loading">
       <div class="sk-spinner sk-spinner-pulse"></div>
     </div>
     <div id="main" v-show="!loading">
@@ -11,7 +11,7 @@
           transform: scaleX(-1);
           display: none;
           "></video>
-      <canvas id="output"/>
+      <canvas id="output" ref="output"/>
     </div>
   </div>
 </template>
@@ -28,13 +28,21 @@ export default {
       cameras: [],
       loading: true,
       width: window.innerWidth,
-      height: window.innerHeight
+      height: window.innerHeight,
+      colorScale: [
+        [110, 64, 170], [143, 61, 178], [178, 60, 178], [210, 62, 167],
+        [238, 67, 149], [255, 78, 125], [255, 94, 99],  [255, 115, 75],
+        [255, 140, 56], [239, 167, 47], [217, 194, 49], [194, 219, 64],
+        [175, 240, 91], [135, 245, 87], [96, 247, 96],  [64, 243, 115],
+        [40, 234, 141], [28, 219, 169], [26, 199, 194], [33, 176, 213],
+        [47, 150, 224], [65, 125, 224], [84, 101, 214], [99, 81, 195]
+      ]
     }
   },
   methods: {
     async loadBodyPix() {
       this.loading = true;
-      this.net = bodyPix.load()
+      this.net = await bodyPix.load()
       this.loading = false;
     },
     async loadVideo() {
@@ -84,6 +92,43 @@ export default {
         this.video.srcObject = null
       }
     },
+    doBodyPix() {
+      const canvas = this.$refs.output
+
+      const self = this
+      async function updateFrame() {
+        const segmentation = await self.estimatePartSegmentation()
+        const coloredPart = bodyPix.toColoredPartMask(segmentation, self.colorScale)
+        window.console.log(segmentation)
+        window.console.log(coloredPart)
+        if (coloredPart != null) {
+          bodyPix.drawPixelatedMask(
+            canvas,
+            self.video,
+            coloredPart,
+            1.0,
+            0,
+            true,
+            20.0
+          )
+        }
+        requestAnimationFrame(updateFrame)
+      }
+
+      updateFrame()
+    },
+    async estimatePartSegmentation() {
+      return await this.net.segmentMultiPersonParts(this.video, {
+        flipHorizontal: true,
+        internalResolution: 'low',
+        segmentationThreshold: 0.7,
+        maxDetections: 10,
+        scoreThreshold: 0.2,
+        nmsRadius: 20,
+        minKeypointScore: 0.3,
+        refineSteps: 10
+      })
+    },
     isAndroid() {
       return /Android/i.test(navigator.userAgent)
     },
@@ -95,11 +140,16 @@ export default {
     }
   },
   async mounted() {
+    const loading = this.$refs.loading
+    loading.width = this.width
+    loading.height = this.height
+
     await this.loadBodyPix()
 
     this.cameras = await this.getVideoInputs()
 
     await this.loadVideo()
+    this.doBodyPix()
   }
 }
 </script>
