@@ -65,8 +65,8 @@ export default {
       video.srcObject = stream;
       return new Promise((resolve) => {
         video.onloadedmetadata = () => {
-          video.width = video.videoWidth
-          video.height = video.videoHeight
+          video.width = video.videoWidth/2
+          video.height = video.videoHeight/2
           resolve(video)
         }
       })
