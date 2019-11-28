@@ -12,6 +12,24 @@
           display: none;
           "></video>
       <canvas id="output" ref="output"/>
+      <div id="menu">
+        <ul>
+          <li id="flip-camera" v-on:click="changeCamera"><i class="material-icons">flip_camera_ios</i></li>
+          <li id="pixel"><i class="material-icons">gradient</i></li>
+          <li id="mask"><i class="material-icons">android</i></li>
+          <li id="pose"><i class="material-icons">emoji_people</i></li>
+        </ul>
+      </div>
+    </div>
+    <div id="footer">
+      <img src="../assets/qr.png">
+      <div>
+        <ul>
+          <li><a href="https://github.com/dforest/bodypix-sample" target="_blank">Github</a></li>
+          <li><a href="https://twitter.com/d_forest" target="_blank">Twitter</a></li>
+          <li><a href="https://note.com/d_forest" target="_blank">Blog</a></li>
+        </ul>
+      </div>
     </div>
   </div>
 </template>
@@ -26,6 +44,8 @@ export default {
       net: {},
       video: {},
       cameras: [],
+      cameraIndex: 0,
+      changingCamera: false,
       loading: true,
       windowHeight: 0,
       colorScale: [
@@ -39,6 +59,14 @@ export default {
     }
   },
   methods: {
+    async changeCamera () {
+      this.changingCamera = true
+      this.cameraIndex++
+      if (this.cameraIndex >= this.cameras.length) {
+        this.cameraIndex = 0
+      }
+      await this.loadVideo()
+    },
     async loadBodyPix() {
       this.net = await bodyPix.load()
     },
@@ -59,7 +87,7 @@ export default {
         'audio': false,
         'video': {
           facingMode: this.isMobile() ? 'user' : null,
-          deviceId: this.cameras[0].deviceId
+          deviceId: this.cameras[this.cameraIndex].deviceId
         }
       })
       video.srcObject = stream;
@@ -100,25 +128,33 @@ export default {
 
       const self = this
       async function updateFrame() {
-        const ctx = canvas.getContext('2d')
-        const segmentation = await self.estimatePartSegmentation()
-        const coloredPart = bodyPix.toColoredPartMask(segmentation, self.colorScale)
-        if (coloredPart != null) {
-          bodyPix.drawPixelatedMask(
-            canvas,
-            self.video,
-            coloredPart,
-            1.0,
-            0,
-            true,
-            10.0
-          )
-        } else {
-          ctx.clearRect(0, 0, canvas.width, canvas.height)
+        try {
+          if (self.changingCamera) {
+            await self.loadBodyPix()
+            self.changingCamera = false
+          }
+          const ctx = canvas.getContext('2d')
+          const segmentation = await self.estimatePartSegmentation()
+          const coloredPart = bodyPix.toColoredPartMask(segmentation, self.colorScale)
+          if (coloredPart != null) {
+            bodyPix.drawPixelatedMask(
+              canvas,
+              self.video,
+              coloredPart,
+              1.0,
+              0,
+              true,
+              10.0
+            )
+          } else {
+            ctx.clearRect(0, 0, canvas.width, canvas.height)
+          }
+        } catch (e) {
+          window.console.error("Retrying...", e)
+        } finally {
+          requestAnimationFrame(updateFrame)
         }
-        requestAnimationFrame(updateFrame)
       }
-
       updateFrame()
     },
     async estimatePartSegmentation() {
@@ -157,7 +193,7 @@ export default {
 }
 </script>
 
-<style>
+<style lang="scss">
   #bodypix {
     width: 100%;
     overflow: hidden;
@@ -167,6 +203,48 @@ export default {
     display: flex;
     justify-content: center;
     align-items: center;
+  }
+
+  #menu {
+    position: absolute;
+    text-align: center;
+    bottom: 6em;
+    left: 0;
+    right: 0;
+
+    li {
+      cursor: pointer;
+    }
+
+    #flip-camera {
+      margin-right: 5em;
+    }
+
+    .material-icons{
+      font-size: 60px;
+    }
+  }
+
+  #footer {
+    margin-top: 6em;
+    text-align: center;
+  }
+
+  ul {
+    display: inline-block;
+    margin: 0;
+    padding: 0;
+
+    li {
+      float: left;
+      list-style: none;
+      margin: 1em;
+    }
+  }
+
+  a {
+    color: #0366d6;
+    text-decoration: none;
   }
 
   /*
