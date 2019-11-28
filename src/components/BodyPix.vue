@@ -99,15 +99,13 @@ export default {
           deviceId: this.cameras[this.cameraIndex].deviceId
         }
       })
+      window.console.log("using camera: " + this.cameras[this.cameraIndex].label)
+
       video.srcObject = stream;
       return new Promise((resolve) => {
         video.onloadedmetadata = () => {
           let width = video.videoWidth
           let height = video.videoHeight
-          if (this.isMobile()) {
-            width = width/2
-            height = height/2
-          }
           video.width = width
           video.height = height
           resolve(video)
@@ -321,13 +319,14 @@ export default {
 
     li {
       cursor: pointer;
+      user-select: none;
       &:first-child {
-        margin-right: 5em;
+        margin-right: 2em;
       }
     }
 
     .material-icons{
-      font-size: 60px;
+      font-size: 30px;
     }
   }
 
