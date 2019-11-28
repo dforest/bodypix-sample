@@ -1,5 +1,7 @@
 # bodypix-sample
 
+[Demo](https://dforest.github.io/bodypix-sample/)
+
 ## Project setup
 ```
 npm install
