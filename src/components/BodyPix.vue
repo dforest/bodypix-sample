@@ -95,7 +95,6 @@ export default {
       const stream = await navigator.mediaDevices.getUserMedia({
         'audio': false,
         'video': {
-          facingMode: this.isMobile() ? 'user' : null,
           deviceId: this.cameras[this.cameraIndex].deviceId
         }
       })
@@ -161,7 +160,7 @@ export default {
           }
 
         } catch (e) {
-          window.console.error("Retrying...", e)
+          window.console.log("Retrying...")
         } finally {
           requestAnimationFrame(updateFrame)
         }
@@ -313,9 +312,14 @@ export default {
   #menu {
     position: absolute;
     text-align: center;
-    bottom: 6em;
+    bottom: 3em;
     left: 0;
     right: 0;
+
+    ul {
+      border-radius: 2px;
+      background-color: rgba(255, 255, 255, .3)
+    }
 
     li {
       cursor: pointer;
