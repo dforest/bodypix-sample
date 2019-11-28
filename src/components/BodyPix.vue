@@ -14,10 +14,10 @@
       <canvas id="output" ref="output"/>
       <div id="menu">
         <ul>
-          <li id="flip-camera" v-on:click="changeCamera"><i class="material-icons">flip_camera_ios</i></li>
-          <li id="pixel"><i class="material-icons">gradient</i></li>
-          <li id="mask"><i class="material-icons">android</i></li>
-          <li id="pose"><i class="material-icons">emoji_people</i></li>
+          <li v-on:click="changeCamera"><i class="material-icons">flip_camera_ios</i></li>
+          <li v-on:click="changeMode('pixel')"><i class="material-icons">gradient</i></li>
+          <li v-on:click="changeMode('mask')"><i class="material-icons">android</i></li>
+          <li v-on:click="changeMode('pose')"><i class="material-icons">emoji_people</i></li>
         </ul>
       </div>
     </div>
@@ -35,6 +35,7 @@
 </template>
 
 <script>
+import * as posenet from '@tensorflow-models/posenet';
 import * as bodyPix from '@tensorflow-models/body-pix';
 
 export default {
@@ -46,6 +47,7 @@ export default {
       cameras: [],
       cameraIndex: 0,
       changingCamera: false,
+      mode: "pixel",
       loading: true,
       windowHeight: 0,
       colorScale: [
@@ -60,12 +62,19 @@ export default {
   },
   methods: {
     async changeCamera () {
+      if (this.changingCamera) {
+        return
+      }
+
       this.changingCamera = true
       this.cameraIndex++
       if (this.cameraIndex >= this.cameras.length) {
         this.cameraIndex = 0
       }
       await this.loadVideo()
+    },
+    changeMode (mode) {
+      this.mode = mode
     },
     async loadBodyPix() {
       this.net = await bodyPix.load()
@@ -133,22 +142,26 @@ export default {
             await self.loadBodyPix()
             self.changingCamera = false
           }
-          const ctx = canvas.getContext('2d')
-          const segmentation = await self.estimatePartSegmentation()
-          const coloredPart = bodyPix.toColoredPartMask(segmentation, self.colorScale)
-          if (coloredPart != null) {
-            bodyPix.drawPixelatedMask(
-              canvas,
-              self.video,
-              coloredPart,
-              1.0,
-              0,
-              true,
-              10.0
-            )
-          } else {
-            ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+          switch(self.mode) {
+            case 'pixel': {
+              const partSegmentation = await self.estimatePartSegmentation()
+              self.drawPixelatedMask(partSegmentation, canvas, self.video)
+              break
+            }
+            case 'mask': {
+              const segmentation = await self.estimateSegmentation()
+              self.drawMask(segmentation, canvas, self.video, {r: 61, g: 220, b: 132, a: 255})
+              break
+            }
+            case 'pose': {
+              const segmentation = await self.estimateSegmentation()
+              self.drawMask(segmentation, canvas, self.video, {r: 0, g: 0, b: 0, a: 0})
+              self.drawPose(segmentation, canvas)
+              break
+            }
           }
+
         } catch (e) {
           window.console.error("Retrying...", e)
         } finally {
@@ -156,6 +169,100 @@ export default {
         }
       }
       updateFrame()
+    },
+    drawPixelatedMask(segmentation, canvas, video) {
+      const ctx = canvas.getContext('2d')
+      const coloredPart = bodyPix.toColoredPartMask(segmentation, self.colorScale)
+      if (coloredPart != null) {
+        bodyPix.drawPixelatedMask(
+          canvas,
+          video,
+          coloredPart,
+          1.0,
+          0,
+          true,
+          10.0
+        )
+      } else {
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+      }
+    },
+    drawMask(segmentation, canvas, video, color) {
+      const mask = bodyPix.toMask(
+        segmentation,
+        color,
+        {r: 0, g: 0, b: 0, a: 0 },
+        false
+      )
+      bodyPix.drawMask(
+        canvas,
+        video,
+        mask,
+        1.0,
+        0,
+        true
+      )
+    },
+    drawPose(segmentation, canvas) {
+      const ctx = canvas.getContext('2d')
+      const scale = 1
+      const size = 10
+      const color = 'aqua'
+      const minScore = 0.1
+
+      segmentation.forEach(personSegmentation => {
+        let pose = personSegmentation.pose;
+        pose = bodyPix.flipPoseHorizontal(pose, personSegmentation.width)
+        for (let i = 0; i < pose.keypoints.length; i++) {
+          const keypoint = pose.keypoints[i]
+          if(keypoint.score < minScore) {
+            continue
+          }
+
+          const {y, x} = keypoint.position;
+          this.drawPoint(ctx, y * scale, x * scale, size, color)
+        }
+
+        const adjacentKeyPoints = posenet.getAdjacentKeyPoints(pose.keypoints, minScore)
+        adjacentKeyPoints.forEach(keypoints => {
+          this.drawSegment(
+            this.toTuple(keypoints[0].position),
+            this.toTuple(keypoints[1].position),
+            scale,
+            size/2,
+            color,
+            ctx
+          )
+        })
+      })
+    },
+    drawPoint(ctx, y, x, r, color) {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, 2 * Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
+    },
+    drawSegment([ay, ax], [by, bx], scale, size, color, ctx) {
+      ctx.beginPath()
+      ctx.moveTo(ax * scale, ay * scale)
+      ctx.lineTo(bx * scale, by * scale)
+      ctx.lineWidth = 5
+      ctx.strokeStyle = color
+      ctx.stroke()
+    },
+    toTuple({y, x}) {
+      return [y, x]
+    },
+    async estimateSegmentation() {
+      return await this.net.segmentMultiPerson(this.video, {
+        internalResolution: 'medium',
+        segmentationThreshold: 0.7,
+        maxDetections: 5,
+        scoreThreshold: 0.2,
+        nmsRadius: 20,
+        numKeypointForMatching: 17,
+        refineSteps: 10
+      })
     },
     async estimatePartSegmentation() {
       return await this.net.segmentMultiPersonParts(this.video, {
@@ -214,10 +321,9 @@ export default {
 
     li {
       cursor: pointer;
-    }
-
-    #flip-camera {
-      margin-right: 5em;
+      &:first-child {
+        margin-right: 5em;
+      }
     }
 
     .material-icons{
